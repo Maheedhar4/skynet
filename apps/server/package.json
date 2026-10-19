@@ -1,0 +1,29 @@
+{
+  "name": "@skynet/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p .",
+    "probe": "tsx src/dev/probe.ts",
+    "smoke": "tsx src/dev/smoke.ts"
+  },
+  "dependencies": {
+    "@google/adk": "^2.3.0",
+    "@google/genai": "^2.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.9",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.2"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.angular/
+coverage/
+*.log
+.DS_Store
+
+# secrets
+.env
+*.local
+
+# local token/session storage lives outside the repo (~/.skynet) but be safe anyway
+*.tokens.json

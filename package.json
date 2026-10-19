@@ -1,0 +1,24 @@
+{
+  "name": "skynet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude-style local chat app wired to the Zepto quick-commerce MCP server",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "concurrently -n server,web -c yellow,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev -w apps/server",
+    "dev:web": "npm run start -w apps/web",
+    "build:server": "npm run build -w apps/server",
+    "build:web": "npm run build -w apps/web",
+    "start:server": "npm run start -w apps/server",
+    "connect:probe": "npm run -w apps/server probe"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

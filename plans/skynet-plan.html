@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skynet — Plan: Claude-style chat app with Zepto MCP</title>
+<style>
+  :root {
+    --bg: #1a1a18;
+    --panel: #242422;
+    --panel-2: #2b2b28;
+    --text: #ece9e2;
+    --muted: #a6a399;
+    --accent: #d97757;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --border: #3a3a36;
+    --code-bg: #131312;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+    padding: 48px 16px;
+  }
+  .page { max-width: 880px; margin: 0 auto; }
+  header.plan-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 24px;
+    margin-bottom: 32px;
+  }
+  h1 { font-size: 2rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 1.25rem;
+    margin: 40px 0 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  h3 { font-size: 1rem; margin: 20px 0 8px; color: var(--text); }
+  p { color: var(--text); }
+  .meta { color: var(--muted); font-size: 0.9rem; }
+  .meta strong { color: var(--text); }
+  ul, ol { padding-left: 22px; }
+  li { margin: 6px 0; }
+  code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.85em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: #d6d3cd;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin: 14px 0;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .badge {
+    display: inline-block;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    border-radius: 999px;
+    padding: 2px 12px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin: 2px 4px 2px 0;
+  }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .dot.green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.amber  { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .dot.red    { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--panel);
+    border-radius: 0 10px 10px 0;
+    padding: 12px 16px;
+    margin: 14px 0;
+    color: var(--muted);
+  }
+  .callout strong { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="plan-header">
+    <h1>_skynet_ — Plan</h1>
+    <p class="meta">
+      A Claude-style local chat app whose main feature is connecting to the
+      <strong>Zepto quick-commerce MCP server</strong> and using it from chat.
+      Status shown as a <span class="dot green"></span><strong>green light</strong> after a successful connect.
+    </p>
+  </header>
+
+  <section>
+    <h2>Stack</h2>
+    <div>
+      <span class="badge">Frontend: Angular (standalone components)</span>
+      <span class="badge">Backend: Node + TypeScript (Express)</span>
+      <span class="badge">Model: Gemini via Google ADK TS (<code>google/adk-js</code>) — free-tier API key</span>
+      <span class="badge">MCP: official <code>@modelcontextprotocol/sdk</code> client</span>
+      <span class="badge">Monorepo: npm workspaces (<code>apps/web</code>, <code>apps/server</code>)</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Research findings (verified live)</h2>
+    <ul>
+      <li>Zepto MCP is a <strong>remote hosted Streamable HTTP server</strong>: <code>https://mcp.zepto.co.in/mcp</code> — nothing to install locally.</li>
+      <li>OAuth discovery works: resource metadata at
+        <code>/.well-known/oauth-protected-resource</code> → authorization server <code>https://auth.zepto.co.in</code>,
+        which supports <strong>dynamic client registration</strong>, <strong>PKCE (S256)</strong>,
+        <strong>authorization_code + refresh_token</strong>.</li>
+      <li>Login is a browser flow: <strong>Indian mobile number + OTP</strong> (this is Zepto's "SSO").</li>
+      <li>Whitelisted OAuth redirect URIs: <code>http://localhost</code>, <code>http://localhost/callback</code>,
+        <code>http://127.0.0.1</code>, <code>http://127.0.0.1/callback</code> — <strong>no ports listed</strong>.</li>
+      <li>Scopes include <code>tools:read</code>, <code>tools:write</code>, cart/order/checkout management
+        (<code>dev.ucp.shopping.*</code>).</li>
+      <li>Tools exposed: <strong>Search Products · Cart Management · Order Placement · Order History</strong>.
+        Orders placed via MCP are <strong>real orders (real money)</strong>.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Architecture</h2>
+<pre>Browser (Angular chat UI)             Node backend (Express, TS)              Zepto cloud
+┌────────────────────────────┐  SSE/HTTP  ┌──────────────────────┐   OAuth + MCP ┌──────────────┐
+│ Chat bar / streaming msgs  │ ─────────► │ Chat API (ADK+Gemini)│ ────────────► │ mcp.zepto.co │
+│ Tool-activity chips        │            │ MCP client (SDK)     │  (Streamable   │    /mcp      │
+│ "Connect Quick Commerce    │            │ OAuth flow engine    │   HTTP)        │              │
+│  MCPs" button              │            │ Token store (file)   │                │              │
+│ ● 🟢 connector status dots │ ◄───────── │ Order-confirmation   │                │              │
+└────────────────────────────┘            │   gate               │                │              │
+                                          └──────────────────────┘                └──────────────┘</pre>
+  </section>
+
+  <section>
+    <h2>1 · Chat UI (Angular)</h2>
+    <ul>
+      <li>Claude-like message list + chat bar; responses stream in (SSE / ReadableStream).</li>
+      <li>Tool-activity chips inline, e.g. <code>🔍 Zepto search "amul milk"</code> while a tool runs.</li>
+      <li>Header button: <strong>Connect to Quick Commerce MCPs</strong>, with a connector card per provider
+        (Zepto now; Blinkit/Instamart later — config-driven registry).</li>
+      <li>Status dot per connector:
+        <span class="dot red"></span>disconnected →
+        <span class="dot amber"></span>awaiting login / reconnecting →
+        <span class="dot green"></span>connected (handshake + <code>tools/list</code> succeeded).</li>
+      <li>Each card has a Disconnect action and a last-checked time.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>2 · Zepto connect flow (backend)</h2>
+    <ol>
+      <li>User clicks Connect → backend fetches resource metadata → discovers <code>auth.zepto.co.in</code>.</li>
+      <li><strong>Dynamic client registration</strong> at <code>/register</code>, then opens browser to Zepto authorize page → mobile number + OTP.</li>
+      <li>Redirect lands on our <code>/callback</code> (backend) → exchange code with PKCE → store access + refresh token under <code>~/.skynet/</code> (file perms <code>0600</code>).</li>
+      <li>Complete MCP Streamable HTTP handshake → <code>tools/list</code> → status turns <span class="dot green"></span>.</li>
+      <li><strong>Disconnect</strong> = call Zepto <code>/revoke</code> + clear tokens.</li>
+      <li><strong>On app restart</strong>: silent reconnect via refresh token — straight to <span class="dot green"></span> if the token is valid.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>3 · Chat ↔ Zepto tools (confirmed scope: "ask before ordering")</h2>
+    <ul>
+      <li>Search · cart view · order history: run directly, no confirmation needed.</li>
+      <li><strong>Order placement &amp; checkout</strong> (<code>order:manage</code>, <code>checkout:manage</code> scopes):
+        backend intercepts, pauses the agent, and shows a prompt like
+        <em>"Zepto wants to place this order (₹542) — reply YES to confirm"</em>;
+        the tool fires only after the user confirms in chat.</li>
+    </ul>
+    <div class="callout">⚠️ <strong>Real money:</strong> every order placed through Zepto MCP is processed as a real Zepto order. The confirmation gate is non-negotiable in v1.</div>
+  </section>
+
+  <section>
+    <h2>4 · The chat brain (Google ADK)</h2>
+    <ul>
+      <li>ADK TS agent (<code>@google/adk</code>) with Gemini + Zepto MCP tools wired in; streams tokens to Angular.</li>
+      <li><strong>Fallback guarantee:</strong> ADK TypeScript is new (0.x). If it's missing a capability we need
+        (e.g. streaming, custom confirmation interception), fall back to a direct
+        <code>@google/genai</code> function-calling loop using the same MCP-derived tools — the core experience doesn't break either way.</li>
+      <li>Requires <code>GEMINI_API_KEY</code> in <code>.env</code> (Google free tier).</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Key technical decision / risk</h2>
+    <div class="card">
+      <p><strong>OAuth redirect port problem:</strong> Zepto whitelists <code>http://localhost</code> and
+        <code>http://localhost/callback</code> with no ports, and OAuth usually does exact-match on redirect URIs.
+        So our callback must serve on <strong>port 80</strong>.</p>
+      <ul>
+        <li>Primary: bind the Node backend's <code>/callback</code> on port 80 (one-time Linux privilege tweak:
+          <code>setcap</code>/<code>authbind</code>/<code>sudo</code>, or iptables REDIRECT → documented in README).</li>
+        <li>First test during build: whether Zepto ignores the port (RFC 8252 loopback behavior). If it does, we stay on a normal port.</li>
+        <li>Both paths are covered in the plan; no dead end either way.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <p><strong>Other risks</strong></p>
+      <ul>
+        <li>ADK TS 0.x immaturity → fallback loop (above).</li>
+        <li>Free-tier Gemini rate limits → acceptable for MVP chat.</li>
+        <li>Token security → tokens stored in <code>~/.skynet/</code> with <code>0600</code> perms; never in the repo; refresh token used silently.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Build order</h2>
+    <table>
+      <tr><th style="width:6ch;">Step</th><th>Deliverable</th></tr>
+      <tr><td>1</td><td>Repo scaffold — npm workspaces: Angular app (<code>apps/web</code>) + Express server (<code>apps/server</code>); chat bar &amp; UI shell working.</td></tr>
+      <tr><td>2</td><td>Gemini chat streaming working via ADK (no MCP yet).</td></tr>
+      <tr><td>3</td><td>Zepto connector — OAuth engine + MCP client + status endpoint; Connect button → OTP flow → 🟢 indicator; disconnect.</td></tr>
+      <tr><td>4</td><td>Tool execution in chat + order-confirmation gate + tool-activity chips.</td></tr>
+      <tr><td>5</td><td>Polish — silent reconnect on start, error states (red dot + reason), chat history persistence, README with run instructions (incl. <code>GEMINI_API_KEY</code> and port-80 note).</td></tr>
+    </table>
+  </section>
+
+  <footer>
+    Plan created for the "skynet" project · 19 Oct 2026 · discussed &amp; agreed in plan mode.
+    Build starts at Step 1 after switching to the build agent.
+  </footer>
+
+</div>
+</body>
+</html>
