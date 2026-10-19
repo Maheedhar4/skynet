@@ -71,6 +71,49 @@ export type WireEvent =
   | { type: 'connectors'; status: Record<string, ConnectorStatus> }
   | { type: 'done' };
 
+// ── F1 clear history ─────────────────────────────────────────────────────────
+export type ClearHistoryResult = SessionDto & { ok: boolean; deleted: number };
+
+// ── F2 session tracing ───────────────────────────────────────────────────────
+export interface TraceSpanRecord {
+  traceId: string;
+  spanId: string;
+  parentSpanId: string | null;
+  name: string;
+  startedAt: number;
+  durationMs: number;
+  status: 'ok' | 'error';
+  statusMessage?: string;
+  sessionId?: string;
+  attributes: Record<string, string | number | boolean>;
+}
+
+export interface TraceSummary {
+  traceId: string;
+  name: string;
+  startedAt: number;
+  durationMs: number;
+  status: 'ok' | 'error';
+  sessionId?: string;
+  spans: TraceSpanRecord[];
+}
+
+export interface OtelHealth {
+  enabled: boolean;
+  otlp: boolean;
+  otlpEndpoint: string;
+  service: string;
+  content: boolean;
+  spans: number;
+}
+
+export interface TracesDto {
+  ok: boolean;
+  otel: OtelHealth;
+  session: string | null;
+  traces: TraceSummary[];
+}
+
 export function dotColor(state: ConnectorState | undefined): string {
   switch (state) {
     case 'connected':

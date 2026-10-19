@@ -16,6 +16,7 @@ import { ChatService } from '../agent/chat-service.js';
 import { RuntimeHandle } from '../agent/engine-types.js';
 import { ToolChip } from '../types.js';
 import { connectorById } from '../connectors/registry.js';
+import { initTracing } from '../telemetry/tracer.js';
 
 /* ── a scripted genai Chat stub ────────────────────────────────────────────── */
 class ScriptedChat implements ChatLike {
@@ -118,6 +119,8 @@ const services = () => {
 /* ── THE TEST ─────────────────────────────────────────────────────────────── */
 async function main(): Promise<void> {
   config.dataDir = '/tmp/opencode/skynet-smoke';
+  // exercise the real tracing pipeline (recording spans, not the noop path):
+  initTracing();
   // the smoke runs fully offline: the genai client is never contacted because
   // the scripted chat replaces the engine's chat map after acquisition.
   config.geminiApiKey = 'smoke-FAKE-key';

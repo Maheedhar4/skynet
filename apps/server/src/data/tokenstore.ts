@@ -40,6 +40,10 @@ export interface PendingFlow {
   state: string;
   verifier: string;
   redirectUri: string;
+  /** Dynamic client registration captured at flow start. The tokens file
+   * gains a registration only after a successful exchange, so without this a
+   * first-ever login would reach the token endpoint with no client_id. */
+  registration?: StoredRegistration;
   createdAt: number;
 }
 

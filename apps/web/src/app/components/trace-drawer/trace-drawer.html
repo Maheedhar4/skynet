@@ -1,0 +1,84 @@
+<aside class="drawer">
+  <header class="head">
+    <div class="title">
+      ⏱ Traces
+      @if (ts.loading()) {
+        <span class="spin">◌</span>
+      }
+    </div>
+    <div class="head-actions">
+      <button class="mini" (click)="ts.refresh()" [disabled]="ts.loading()" title="refresh traces">↻</button>
+      <button class="mini x" (click)="ts.close()" title="close the drawer">✕</button>
+    </div>
+  </header>
+
+  <div class="sub">
+    @if (ts.enabled()) {
+      {{ ts.count() }} trace{{ ts.count() === 1 ? '' : 's' }} for your session — newest first.
+      @if (ts.otel()?.otlp) {
+        <span class="otlp">mirroring → {{ ts.otel()?.otlpEndpoint }}</span>
+      }
+    } @else {
+      Tracing is off (SKYNET_OTEL=off) — nothing is recorded.
+    }
+  </div>
+
+  <div class="list">
+    @for (t of ts.traces(); track t.traceId) {
+      <div class="trace" [class.expanded]="ts.expanded().has(t.traceId)">
+        <button class="trace-head" (click)="ts.toggleTrace(t.traceId)">
+          <span class="chev">{{ ts.expanded().has(t.traceId) ? '▾' : '▸' }}</span>
+          <span class="tname">
+            {{ t.name }}
+            @if (!ts.expanded().has(t.traceId)) {
+              <span class="tmuted">{{ clock(t.startedAt) }} · {{ spanCount(t) }} spans</span>
+            }
+          </span>
+          <span class="tdur" [class.err]="t.status === 'error'">{{ fmtMs(t.durationMs) }}</span>
+          <span class="dot" [style.background]="statusColor(t.status)"></span>
+        </button>
+
+        @if (ts.expanded().has(t.traceId)) {
+          @if (rootAttrs(t)) {
+            <div class="tattrs">{{ rootAttrs(t) }}</div>
+          }
+          @for (sp of t.spans; track sp.spanId) {
+            <div class="span-row" [class.err]="sp.status === 'error'">
+              <div class="span-meta">
+                <span class="sname">{{ sp.name }}</span>
+                <span class="sdur">{{ fmtMs(sp.durationMs) }}</span>
+                <span class="dot s" [style.background]="statusColor(sp.status)"></span>
+              </div>
+              <div class="waterfall">
+                <div
+                  class="bar"
+                  [style.left.%]="offset(t.spans, t, sp)"
+                  [style.width.%]="width(t.spans, t, sp)"
+                  [style.background]="statusColor(sp.status)"
+                ></div>
+              </div>
+              @if (attrs(sp).length) {
+                <div class="sattrs">{{ attrs(sp).join(' · ') }}</div>
+              }
+            </div>
+          }
+        }
+      </div>
+    } @empty {
+      <div class="empty">
+        @if (ts.enabled()) {
+          No traces yet — send a chat message and the turn's waterfall lands here.
+        } @else {
+          Turn tracing on (SKYNET_OTEL) in .env and restart skynet.
+        }
+      </div>
+    }
+  </div>
+
+  @if (ts.otel(); as otel) {
+    <footer class="foot">
+      in-app store: {{ otel.spans }} spans · service {{ otel.service }} · content={{ otel.content ?
+      'ON (metadata+text)' : 'metadata only' }}
+    </footer>
+  }
+</aside>

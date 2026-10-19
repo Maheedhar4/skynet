@@ -18,6 +18,8 @@ export class ChatApiService {
   readonly sessionError = signal<string | null>(null);
   readonly pendingGateId = signal<string | null>(null);
   readonly sessionId = signal<string | null>(null);
+  /** True while a clear-history request is in flight (disables the button). */
+  readonly clearing = signal(false);
 
   /** Coalesced delta flushing keeps re-renders cheap on fast streams. */
   private deltas = new Map<string, string>();
@@ -44,6 +46,8 @@ export class ChatApiService {
   }
 
   async newSession(): Promise<void> {
+    if (this.streaming() || this.clearing()) return; // no mid-turn session swaps
+    this.resetTransient();
     try {
       const res = await fetch('/api/session/new', { method: 'POST' });
       const s = (await res.json()) as SessionDto;
@@ -54,6 +58,43 @@ export class ChatApiService {
     } catch (e) {
       this.sessionError.set(e instanceof Error ? e.message : 'failed to start a new chat');
     }
+  }
+
+  /**
+   * F1 — Clear history: deletes every stored transcript + the index on the
+   * server (irreversible!) and replaces the current transcript with the
+   * fresh empty session it returns. Token/auth data is never touched.
+   */
+  async clearHistory(): Promise<void> {
+    if (this.streaming() || this.clearing()) return;
+    this.clearing.set(true);
+    this.resetTransient();
+    try {
+      const res = await fetch('/api/session/clear', { method: 'POST' });
+      if (!res.ok) {
+        this.sessionError.set(`clear history failed (${res.status})`);
+        return;
+      }
+      const body = (await res.json()) as SessionDto & { ok?: boolean; deleted?: number };
+      this.turns.set(body.turns ?? []);
+      this.sessionId.set(body.sessionId);
+      this.pendingGateId.set(body.pendingGate?.id ?? null);
+      this.sessionError.set(null);
+    } catch (e) {
+      this.sessionError.set(e instanceof Error ? e.message : 'failed to clear history');
+    } finally {
+      this.clearing.set(false);
+    }
+  }
+
+  /** Drop pending gate markers + buffered deltas — old turn state must not leak into the fresh session. */
+  private resetTransient(): void {
+    this.deltas.clear();
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.pendingGateId.set(null);
   }
 
   async send(text: string): Promise<void> {

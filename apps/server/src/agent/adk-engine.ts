@@ -16,6 +16,8 @@ import { PreparedTool } from './tools.js';
 import { AgentStep, Engine, RuntimeHandle } from './engine-types.js';
 import { createId } from '../oauth/pkce.js';
 import { log } from '../logger.js';
+import { recordError, startSpan } from '../telemetry/tracer.js';
+import { ATTR } from '../telemetry/store.js';
 
 const WEB_USER = 'web';
 
@@ -40,6 +42,15 @@ export async function createAdkEngine(): Promise<Engine> {
       this.runners.delete(sid);
     }
 
+    forgetAll(): void {
+      // Drop the ADK in-memory session state as well (deleteSession is on the
+      // sessionService; runners live per sid in this map).
+      for (const [sid, cached] of [...this.runners]) {
+        void this.dropSession(cached.runner, sid).catch(() => undefined);
+      }
+      this.runners.clear();
+    }
+
     save(_sid: string, _sess: { directHistory?: unknown[] }): void {
       // ADK keeps its session state with the runner; nothing to export.
     }
@@ -50,11 +61,12 @@ export async function createAdkEngine(): Promise<Engine> {
       userText: string;
       tools: PreparedTool[];
       runtime?: RuntimeHandle;
+      traceParent?: import('@opentelemetry/api').Span;
     }): AsyncGenerator<AgentStep> {
-      const runner = await this.runnerFor(o.sid, o.tools, o.runtime);
+      const runner = await this.runnerFor(o.sid, o.tools, o.runtime, o.traceParent);
       await this.ensureSession(runner, o.sid);
       o.session.engine = 'adk';
-      yield* this.pump(runner, o.sid, { role: 'user', parts: [{ text: o.userText }] });
+      yield* this.pump(runner, o.sid, { role: 'user', parts: [{ text: o.userText }] }, o.traceParent);
     }
 
     async *answerPending(o: {
@@ -63,6 +75,7 @@ export async function createAdkEngine(): Promise<Engine> {
       approved: boolean;
       tools: PreparedTool[];
       runtime?: RuntimeHandle;
+      traceParent?: import('@opentelemetry/api').Span;
     }): AsyncGenerator<AgentStep> {
       const pend = o.session.adkPending as
         | { interruptId: string; functionCallName: string; payload?: unknown }
@@ -82,7 +95,7 @@ export async function createAdkEngine(): Promise<Engine> {
       try {
         const runner = this.runners.get(o.sid)?.runner;
         if (!runner) throw new Error('ADK runner lost after restart');
-        yield* this.pump(runner, o.sid, message);
+        yield* this.pump(runner, o.sid, message, o.traceParent);
       } catch (e) {
         yield { kind: 'error', message: e instanceof Error ? e.message : String(e) };
       }
@@ -93,6 +106,7 @@ export async function createAdkEngine(): Promise<Engine> {
       sid: string,
       tools: PreparedTool[],
       runtime: RuntimeHandle | undefined,
+      traceParent?: import('@opentelemetry/api').Span,
     ): Promise<InstanceType<AdkModule['InMemoryRunner']>> {
       const sig = tools.map((t) => `${t.name}${t.gated ? '!' : ''}`).join(',');
       const cached = this.runners.get(sid);
@@ -105,7 +119,7 @@ export async function createAdkEngine(): Promise<Engine> {
           execute: async (input: unknown) => {
             if (!runtime) throw new Error('no quick-commerce MCP connected');
             const args = (input ?? {}) as Record<string, unknown>;
-            const res = await runtime.mcp.callTool(t.name, args);
+            const res = await runtime.mcp.callTool(t.name, args, traceParent);
             return { result: res };
           },
           ...(t.gated ? { requireConfirmation: true } : {}),
@@ -157,12 +171,43 @@ export async function createAdkEngine(): Promise<Engine> {
       runner: InstanceType<AdkModule['InMemoryRunner']>,
       sid: string,
       newMessage: Content,
+      traceParent?: import('@opentelemetry/api').Span,
+    ): AsyncGenerator<AgentStep> {
+      // ADK runs its own model rounds internally; one span per invocation with
+      // the streamed size + call counts gives the viewer the round shape.
+      const roundSpan = startSpan(
+        'llm.round',
+        {
+          [ATTR.round]: 0,
+          [ATTR.model]: config.geminiModel,
+          [ATTR.engine]: 'adk',
+          [ATTR.session]: sid,
+        },
+        traceParent,
+      );
+      try {
+        yield* this.pumpBody(runner, sid, newMessage, roundSpan, traceParent);
+      } catch (e) {
+        recordError(roundSpan, e);
+        throw e;
+      } finally {
+        roundSpan.end();
+      }
+    }
+
+    private async *pumpBody(
+      runner: InstanceType<AdkModule['InMemoryRunner']>,
+      sid: string,
+      newMessage: Content,
+      roundSpan: ReturnType<typeof startSpan>,
+      traceParent?: import('@opentelemetry/api').Span,
     ): AsyncGenerator<AgentStep> {
       // partial deltas accumulate here so the (complete) final event doesn't
       // re-emit the same text.
       let streamed = '';
       const runningById = new Map<string, { name: string; title: string }>();
       const runningByName = new Map<string, string>();
+      let functionCalls = 0;
 
       for await (const ev of runner.runAsync({
         userId: WEB_USER,
@@ -226,6 +271,7 @@ export async function createAdkEngine(): Promise<Engine> {
           }
           if (p.functionCall && !p.functionCall.name?.startsWith('adk_')) {
             // running chip: the framework will execute this tool
+            functionCalls++;
             const fc = p.functionCall;
             const callId = fc.id ?? createId();
             runningById.set(callId, { name: fc.name ?? 'tool', title: `🧩 ${fc.name ?? 'tool'}` });
@@ -259,6 +305,8 @@ export async function createAdkEngine(): Promise<Engine> {
           }
         }
       }
+      roundSpan.setAttribute('skynet.streamed.text.length', streamed.length);
+      roundSpan.setAttribute('skynet.functionCalls.count', functionCalls);
     }
   }
 

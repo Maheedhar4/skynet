@@ -70,9 +70,9 @@ export class ConnectorRuntime {
   }
 
   /**
-   * Complete the flow with a code that arrived on /callback (port 80) — Plan
-   * §2.3–2.4. Exchanges PKCE-verifier, stores tokens, does the MCP handshake
-   * and turns the dot green.
+   * Complete the flow with a code that arrived on /callback (the registered
+   * callback URI — dev 4180) — Plan §2.3–2.4. Exchanges PKCE-verifier, stores
+   * tokens, does the MCP handshake and turns the dot green.
    */
   async completeConnect(flow: PendingFlow, code: string): Promise<void> {
     this.setStatus({ state: 'connecting' });
@@ -95,7 +95,7 @@ export class ConnectorRuntime {
     }
   }
 
-  /** Dev escape hatch when port 80 isn't bindable (Plan §Key decision). */
+  /** Dev escape hatch when the callback port isn't reachable (Plan §Key decision). */
   async completeFromPastedUrl(rawUrl: string): Promise<void> {
     let u: URL;
     try {

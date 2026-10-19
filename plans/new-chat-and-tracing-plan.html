@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skynet — Feature Plan: New chat / Clear history + Session tracing</title>
+  <style>
+    :root {
+      --bg: #1a1a18;
+      --panel: #242422;
+      --panel-2: #2b2b28;
+      --text: #ece9e2;
+      --muted: #a6a399;
+      --accent: #d97757;
+      --green: #4ade80;
+      --amber: #fbbf24;
+      --red: #f87171;
+      --border: #3a3a36;
+      --code-bg: #131312;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.6;
+      padding: 48px 16px;
+    }
+    .page { max-width: 880px; margin: 0 auto; }
+    header.plan-header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+    }
+    h1 { font-size: 2rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+    h2 {
+      font-size: 1.25rem;
+      margin: 40px 0 12px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    h3 { font-size: 1rem; margin: 20px 0 8px; color: var(--text); }
+    p { color: var(--text); }
+    .meta { color: var(--muted); font-size: 0.9rem; }
+    .meta strong { color: var(--text); }
+    ul, ol { padding-left: 22px; }
+    li { margin: 6px 0; }
+    code {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.85em;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      overflow-x: auto;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      color: #d6d3cd;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin: 14px 0;
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .badge {
+      display: inline-block;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      border-radius: 999px;
+      padding: 2px 12px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin: 2px 4px 2px 0;
+    }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .dot.green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.amber  { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+    .dot.red    { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--panel);
+      border-radius: 0 10px 10px 0;
+      padding: 12px 16px;
+      margin: 14px 0;
+      color: var(--muted);
+    }
+    .callout strong { color: var(--text); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; }
+    footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <header class="plan-header">
+    <h1>skynet — Feature Plan</h1>
+    <p class="meta">
+      Two new features requested on top of the shipped app:
+      <strong>F1 · New chat &amp; Clear history</strong> (chat UI affordance) and
+      <strong>F2 · Session tracing</strong> (OpenTelemetry for agent requests, in-app viewer + OTLP export).
+      Decisions locked in with the owner on 2026-10-19.
+    </p>
+    <div style="margin-top:10px;">
+      <span class="badge">F1: New chat resets + separate Clear-history action</span>
+      <span class="badge">F2: In-app trace viewer</span>
+      <span class="badge">F2: OTLP export to Jaeger/Grafana</span>
+      <span class="badge">F2: Metadata-only spans by default</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Where the code stands today</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>F1 — backend is already built</h3>
+        <ul style="margin:6px 0 0;">
+          <li><code>POST /api/session/new</code> → <code>ChatService.startNew(sid)</code> — swaps in a fresh session, calls <code>engine.forget(sid)</code>, rewrites the index. Old transcript file stays on disk.</li>
+          <li><code>ChatApiService.newSession()</code> in the web app already works — it is simply <strong>never wired to any button</strong>.</li>
+          <li>F1 is therefore mostly UI wiring + one new clear-all endpoint.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>F2 — no tracing exists yet</h3>
+        <ul style="margin:6px 0 0;">
+          <li>Only a console logger (<code>apps/server/src/logger.ts</code>).</li>
+          <li><code>@google/adk</code> already pulls <code>@opentelemetry/*</code> transitively and ADK v2 is built on OTel — an OTel-native approach is natural and cheap.</li>
+          <li>The pipeline is small and explicit (<code>http/app.ts</code> → <code>ChatService</code> → engines → <code>McpToolSource</code>) — manual spans beat heavy auto-instrumentation here.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>F1 — New chat + Clear history</h2>
+
+    <h3>Server</h3>
+    <ul>
+      <li><strong><code>ChatService.clearHistory(sid)</code></strong> (<code>apps/server/src/agent/chat-service.ts</code>):
+        delete every transcript JSON under <code>dataDir/history/</code>, reset <code>index.json</code>, then
+        reuse <code>startNew(sid)</code> so the UI lands on a fresh empty session. Add a
+        <code>forgetAll()</code> to the <code>Engine</code> contract (<code>agent/engine-types.ts</code> +
+        both engines) so stale genai / ADK in-memory chats for other sids cannot resurrect deleted history.</li>
+      <li><strong><code>POST /api/session/clear</code></strong> (<code>apps/server/src/http/app.ts</code>)
+        → returns <code>{ ok: true, deleted: n, sessionId }</code>.</li>
+      <li>Small util in <code>data/files.ts</code>: safe directory listing + unlink loop (0600 files, path-traversal-safe via the existing <code>joinSecure</code>).</li>
+      <li style="color:var(--muted)">The token store lives in a separate directory and is <strong>not</strong> touched — clearing chat history never logs connectors out.</li>
+    </ul>
+
+    <h3>Web</h3>
+    <ul>
+      <li><strong>Header buttons</strong> in <code>app.html</code> / <code>app.ts</code>:
+        <code>+ New chat</code> (pill style mirroring the connect button) and
+        <code>Clear history…</code> (subtle/danger styling, guarded by a <code>confirm()</code> dialog — irreversible).</li>
+      <li>Both disabled while <code>chat.streaming()</code>.</li>
+      <li>New chat → existing <code>newSession()</code>, plus: clear <code>pendingGateId</code> / buffered deltas, reset the message scroller.</li>
+      <li>Clear history → new <code>clearHistory()</code> method in <code>ChatApiService</code> → replace turns with the returned fresh session.</li>
+      <li>Styles in <code>app.css</code>, including the existing <code>@media (max-width: 560px)</code> mobile adjustment so three header buttons still fit.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>F2 — Session tracing (OpenTelemetry)</h2>
+
+    <h3>SDK setup — new <code>apps/server/src/telemetry/</code> module</h3>
+    <ul>
+      <li><code>tracer.ts</code> — singleton <code>NodeTracerProvider</code> (guard against double registration; ADK ships its own OTel wiring). Resource <code>service.name=skynet-server</code> + engine/model attributes. Node SDK's async-hooks context manager lets spans nest correctly across the streaming async-generator chain with zero threading effort.</li>
+      <li><code>store.ts</code> — a custom <code>SpanExporter</code> that appends finished spans to a bounded in-memory ring buffer (~2000 spans) as plain records:
+        <code>{ traceId, parentSpanId, name, startedAt, durationMs, status, attributes }</code>.
+        This feeds the in-app viewer — no external infrastructure required.</li>
+      <li>OTLP/HTTP <code>BatchSpanProcessor</code> activates only when <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> is set (Jaeger all-in-one on <code>:4318</code>, Grafana Tempo, Altitude, etc.).</li>
+      <li>Skip the Jaeger exporter (deprecated upstream) — OTLP is the single standard export path.</li>
+    </ul>
+
+    <h3>Content policy</h3>
+    <div class="callout">
+      <strong>Metadata only by default.</strong> Tool names, argument previews, durations, statuses, model,
+      round numbers, gate decisions. Prompt/response text stays out of traces unless
+      <code>SKYNET_OTEL_CONTENT=1</code> opts in. Tokens/secrets are never traced; reuse of the existing
+      <code>redact()</code> helper stays the rule.
+    </div>
+
+    <h3>Instrumentation points</h3>
+    <table>
+      <tr><th>Span</th><th>Where</th><th>Key attributes</th></tr>
+      <tr>
+        <td><code>http.&lt;route&gt;</code></td>
+        <td><code>http/app.ts</code> — tiny express middleware for <code>/api/*</code></td>
+        <td>method, route, status, duration; chat pipe becomes the trace root for a turn</td>
+      </tr>
+      <tr>
+        <td><code>agent.turn</code> / <code>agent.gate</code></td>
+        <td><code>ChatService.process()</code> and <code>gateFlow()</code></td>
+        <td>sessionId, engine (<code>direct</code>/<code>adk</code>), mode (turn/gate), gateApproved</td>
+      </tr>
+      <tr>
+        <td><code>agent.prepare_tools</code></td>
+        <td><code>ChatService.run()</code></td>
+        <td>connector id, tool count, connectorDown</td>
+      </tr>
+      <tr>
+        <td><code>llm.round</code></td>
+        <td><code>DirectEngine.loop()</code> and ADK <code>pump()</code> — one span per model round</td>
+        <td>round #, model, streamed text size, function-call count; bonus: registered provider may surface ADK's own LLM spans</td>
+      </tr>
+      <tr>
+        <td><code>mcp.callTool</code></td>
+        <td><code>McpToolSource.callTool()</code> (<code>mcp/connection.ts</code>) — single edit covers direct-engine calls, gate-executed calls, and anything future</td>
+        <td>connector, tool, ok/error, duration</td>
+      </tr>
+    </table>
+    <p style="color:var(--muted)">Errors use <code>recordException</code> + status <code>ERROR</code>; a <code>'yes'/'no'</code> gate answer appears as the gate-resolve span automatically.</p>
+
+    <h3>/api/health + dependencies</h3>
+    <ul>
+      <li><code>/api/health</code> gains <code>otel: { otlp: boolean, otlpEndpoint, spans: n }</code>.</li>
+      <li>Explicit deps in <code>apps/server/package.json</code> (already present in the lockfile transitively via <code>@google/adk</code> — versions aligned so workspace dedupe keeps one copy of <code>@opentelemetry/api</code>):
+        <div>
+          <span class="badge">@opentelemetry/api ^1.9</span>
+          <span class="badge">@opentelemetry/sdk-trace-node 2.x</span>
+          <span class="badge">@opentelemetry/resources 2.x</span>
+          <span class="badge">@opentelemetry/semantic-conventions 1.x</span>
+          <span class="badge">@opentelemetry/exporter-trace-otlp-http 0.222.x</span>
+        </div>
+      </li>
+    </ul>
+
+    <h3>In-app trace viewer (web)</h3>
+    <ul>
+      <li><strong><code>GET /api/traces?session=&amp;limit=</code></strong> in <code>http/app.ts</code> + query helpers in <code>store.ts</code>: traces grouped by traceId, sorted newest-first, spans flattened to waterfall rows.</li>
+      <li>New <code>TracesService</code> (Angular signals) + <code>trace-drawer</code> component under <code>apps/web/src/app/components/trace-drawer/</code> (ts/html/css, dark theme vars matching <code>app.css</code>).</li>
+      <li>Collapsible right-side drawer, opened by a <code>⏱ Traces</code> header button. Lists recent traces for the session; expanding one shows the waterfall: span name, duration bar, status color, attributes.</li>
+      <li>Fetch on open + manual refresh + optional 5s poll while open. Types via <code>models.ts</code>. Buttons disabled while streaming, like everything else.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Environment variables</h2>
+    <table>
+      <tr><th>Var</th><th>Default</th><th>Meaning</th></tr>
+      <tr><td><code>SKYNET_OTEL</code></td><td><code>on</code></td><td>master switch for the tracing pipeline (in-app store included when on)</td></tr>
+      <tr><td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td><td>(unset)</td><td>when set, OTLP/HTTP export goes here — e.g. <code>http://localhost:4318</code> for Jaeger all-in-one</td></tr>
+      <tr><td><code>SKYNET_OTEL_SERVICE</code></td><td><code>skynet-server</code></td><td>overridable <code>service.name</code> resource attribute</td></tr>
+      <tr><td><code>SKYNET_OTEL_CONTENT</code></td><td><code>off</code></td><td>opt-in to embed prompt/response text in spans (privacy-sensitive)</td></tr>
+    </table>
+    <p style="color:var(--muted)">Documented in <code>.env.example</code> and a short README "Tracing your session" section pointing at <code>docker run -p 4318:4318 jaegertracing/all-in-one</code> + <code>http://localhost:16686</code>.</p>
+  </section>
+
+  <section>
+    <h2>Build order</h2>
+    <ol>
+      <li><strong>F1 server</strong>: <code>clearHistory()</code> + <code>forgetAll()</code> + <code>POST /api/session/clear</code> + files util.</li>
+      <li><strong>F1 web</strong>: header buttons, service methods, guard states, styles, mobile fit.</li>
+      <li><strong>F2 setup</strong>: telemetry module (provider, store exporter, OTLP switch), deps, init in <code>src/index.ts</code> before connector boot.</li>
+      <li><strong>F2 instrumentation</strong>: middleware → ChatService → engines → <code>callTool</code>; health endpoint field.</li>
+      <li><strong>F2 viewer</strong>: <code>/api/traces</code> → <code>TracesService</code> → <code>trace-drawer</code> UI.</li>
+      <li><strong>Verify</strong>: run the real flow — connect Zepto → search → add to cart → gated order (YES path) → inspect the trace waterfall end-to-end; plus OTLP smoke against local Jaeger.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Acceptance criteria</h2>
+    <ul>
+      <li><span class="dot green"></span><strong>New chat</strong> resets the transcript instantly mid-session; no stale gate card or delta residue; works while connectors stay green.</li>
+      <li><span class="dot green"></span><strong>Clear history</strong> (after confirm) deletes transcript files + index, makes the current and any other sid start fresh, and never touches token/auth data.</li>
+      <li><span class="dot green"></span>During streaming both actions are disabled — no mid-turn session swaps.</li>
+      <li><span class="dot green"></span><strong>Trace drawer</strong> answers "what happened in this session?" with zero external infra: turn → rounds → tool calls → gate decision, all with durations.</li>
+      <li><span class="dot green"></span>With <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> set, the same traces appear in any OTLP-compatible backend.</li>
+      <li><span class="dot green"></span>No prompt/response text in traces unless <code>SKYNET_OTEL_CONTENT=1</code>; no tokens anywhere.</li>
+      <li><span class="dot green"></span>Tracing off (<code>SKYNET_OTEL=off</code>) loses nothing but the viewer/export — chat behaves identically.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Files touched</h2>
+    <table>
+      <tr><th>File</th><th>Change</th></tr>
+      <tr><td><code>apps/server/src/agent/chat-service.ts</code></td><td>F1 <code>clearHistory()</code>; F2 <code>agent.turn</code>/<code>agent.gate</code>/<code>agent.prepare_tools</code> spans</td></tr>
+      <tr><td><code>apps/server/src/agent/engine-types.ts</code></td><td>F1 optional <code>forgetAll()</code> on <code>Engine</code></td></tr>
+      <tr><td><code>apps/server/src/agent/direct-engine.ts</code></td><td>F1 <code>forgetAll()</code>; F2 <code>llm.round</code> spans</td></tr>
+      <tr><td><code>apps/server/src/agent/adk-engine.ts</code></td><td>F1 <code>forgetAll()</code>; F2 <code>llm.round</code> spans</td></tr>
+      <tr><td><code>apps/server/src/http/app.ts</code></td><td>F1 <code>POST /api/session/clear</code>; F2 route-span middleware + <code>GET /api/traces</code> + health field</td></tr>
+      <tr><td><code>apps/server/src/mcp/connection.ts</code></td><td>F2 <code>mcp.callTool</code> span</td></tr>
+      <tr><td><code>apps/server/src/data/files.ts</code></td><td>F1 safe list/unlink util</td></tr>
+      <tr><td><code>apps/server/src/telemetry/tracer.ts</code> ★new</td><td>F2 provider setup + span helpers</td></tr>
+      <tr><td><code>apps/server/src/telemetry/store.ts</code> ★new</td><td>F2 in-memory span store/primary exporter + query</td></tr>
+      <tr><td><code>apps/server/src/config.ts</code> · <code>src/index.ts</code></td><td>F2 OTel config + init before boot</td></tr>
+      <tr><td><code>apps/server/package.json</code></td><td>F2 explicit OTel deps</td></tr>
+      <tr><td><code>apps/web/src/app/app.html</code> · <code>app.ts</code> · <code>app.css</code></td><td>F1 header buttons; F2 traces drawer toggle</td></tr>
+      <tr><td><code>apps/web/src/app/services/chat.service.ts</code></td><td>F1 <code>clearHistory()</code> + guards</td></tr>
+      <tr><td><code>apps/web/src/app/services/traces.service.ts</code> ★new</td><td>F2 drawer state + <code>/api/traces</code> client</td></tr>
+      <tr><td><code>apps/web/src/app/components/trace-drawer/*</code> ★new</td><td>F2 trace timeline UI (ts/html/css)</td></tr>
+      <tr><td><code>apps/web/src/app/models.ts</code></td><td>F1/F2 shared types (<code>TraceSummary</code>, clear result)</td></tr>
+      <tr><td><code>.env.example</code> · <code>README.md</code></td><td>F2 env docs + Jaeger how-to</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Risks &amp; notes</h2>
+    <ul>
+      <li><strong>ADK double registration</strong> — ADK is OTel-native; the provider setup registers once, globally, guarded (<code>setGlobalTracerProvider</code> only once), so ADK's internal telemetry merges into the same capture rather than conflicting.</li>
+      <li><strong>Version alignment</strong> — OTel deps chosen to match versions already in the lockfile via <code>@google/adk</code> so npm workspaces dedupes to a single <code>@opentelemetry/api</code> instance.</li>
+      <li><strong>Viewer persistence</strong> — the in-app store is memory-only; traces reset on server restart (acceptable for a local dev tool). A JSONL sink can be added later as a non-breaking follow-up.</li>
+      <li><strong>Async context across streams</strong> — the chat pipe runs inside one request lifecycle; SDK's async-hooks context manager makes parent/child nesting automatic even across the async-generator + ReadableStream chain.</li>
+      <li><strong>Mid-turn clear</strong> — clear-all is disabled while streaming, mirroring New chat, so the session swap can never race a running turn.</li>
+    </ul>
+  </section>
+
+  <footer>
+    skynet feature plan — F1 New chat / Clear history · F2 OpenTelemetry session tracing — drafted 2026-10-19
+  </footer>
+
+</div>
+</body>
+</html>

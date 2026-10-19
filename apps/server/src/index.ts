@@ -1,8 +1,10 @@
 /**
  * skynet server entrypoint (Build order Step 1–5 server side):
  *   1. boot: restore connectors — silent reconnect via refresh tokens → green
- *   2. listen: API port (8080) + OAuth callback port 80 (bind may fail — the
- *      paste fallback and README directions keep the flow possible)
+ *   2. listen: API port (dev 8080) + OAuth callback port (dev 4180 — plain
+ *      unprivileged; the redirect URI registered with Zepto must
+ *      character-match the URI served here). If that bind fails, the paste
+ *      fallback keeps the flow possible.
  */
 import * as http from 'node:http';
 import { config } from './config.js';
@@ -11,6 +13,7 @@ import { connectorRuntimes, ConnectorRuntime } from './connectors/service.js';
 import { CONNECTORS } from './connectors/registry.js';
 import { ChatService } from './agent/chat-service.js';
 import { createApp } from './http/app.js';
+import { initTracing } from './telemetry/tracer.js';
 import type { RuntimeHandle } from './agent/engine-types.js';
 
 const SCOPE = 'skynet';
@@ -47,6 +50,11 @@ function dotFor(state: string, error?: string): string {
 
 async function main(): Promise<void> {
   banner();
+
+  // 0 ── OpenTelemetry (F2): register the global provider BEFORE any engine
+  // import — @google/adk's own wiring then merges into this capture instead of
+  // fighting over the global slot.
+  initTracing();
 
   const chat = new ChatService(
     config.engine,
@@ -88,9 +96,9 @@ async function main(): Promise<void> {
   callbackServer.on('error', (e: NodeJS.ErrnoException) => {
     let reason: string;
     if (e.code === 'EACCES') {
-      reason = `cannot bind port ${config.callbackPort} (EACCES) — port 80 needs privileges for Zepto's exact-match redirect URI; see README "Port 80 note"`;
+      reason = `cannot bind port ${config.callbackPort} (EACCES) — privileged port; pick an unprivileged SKYNET_CALLBACK_PORT (the redirect URI follows the port) or grant OS port rights — see README "The callback port"`;
     } else if (e.code === 'EADDRINUSE') {
-      reason = `cannot bind port ${config.callbackPort} (EADDRINUSE) — something else (e.g. apache2/nginx) already owns :80; stop it or use the paste fallback (connector sheet)`;
+      reason = `cannot bind port ${config.callbackPort} (EADDRINUSE) — something else already owns it (e.g. apache2/nginx on :80); free the port, pick another SKYNET_CALLBACK_PORT, or use the paste fallback (connector sheet)`;
     } else {
       reason = `${e.code}: ${e.message}`;
     }

@@ -1,8 +1,9 @@
 /**
  * The one express app (Plan §1–3). It listens TWICE: the API port (dev 8080)
- * and the OAuth redirect callback port 80 — Zepto whitelists ONLY
- * `http://localhost/callback` and `http://localhost` with NO port (verified
- * live), so /callback must be served on exactly that origin.
+ * and the OAuth redirect callback port (dev 4180). Zepto validates the
+ * redirect_uri exact-match against the client's registered URIs (no RFC 8252
+ * port leniency — but it registers ported URIs fine), so whatever URI is
+ * configured must be served on exactly that port.
  */
 import express, { Request, Response } from 'express';
 import cors from 'cors';
@@ -14,7 +15,10 @@ import { log } from '../logger.js';
 import { isGatedToolName } from '../agent/gate.js';
 import { toDto } from './dto.js';
 import { Ndjson } from './ndjson.js';
-import { sidFrom } from './sid.js';
+import { readSid, sidFrom } from './sid.js';
+import { SpanStatusCode } from '@opentelemetry/api';
+import { activate, otelHealth, queryTraces, startSpan } from '../telemetry/tracer.js';
+import { ATTR } from '../telemetry/store.js';
 import type { ChatSession, ConnectorStatus } from '../types.js';
 
 export interface AppDeps {
@@ -27,6 +31,33 @@ export function createApp(deps: AppDeps): express.Express {
   app.disable('x-powered-by');
   app.use(cors({ origin: true }));
   app.use(express.json({ limit: '1mb' }));
+
+  // ── F2 tracing: one `http.<route>` span per /api call ────────────────────────
+  // The chat pipe becomes the trace ROOT for a turn: no deliberate parent is
+  // needed — /api/chat is where the turn's trace begins. The Node SDK's default
+  // async-hooks context manager keeps the span active across every await in the
+  // ndjson pipeline, so agent./llm./mcp. spans nest automatically.
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api/')) {
+      next();
+      return;
+    }
+    const route = apiRouteFor(req.path);
+    const t0 = Date.now();
+    const sid = readSid(req);
+    const span = startSpan(`http.${route}`, {
+      'http.method': req.method,
+      'http.route': route,
+      ...(sid ? { [ATTR.session]: sid } : {}),
+    });
+    activate(span, () => next());
+    res.on('finish', () => {
+      span.setAttribute('http.status_code', res.statusCode);
+      span.setAttribute('skynet.duration_ms', Date.now() - t0);
+      if (res.statusCode >= 500) span.setStatus({ code: SpanStatusCode.ERROR, message: `HTTP ${res.statusCode}` });
+      span.end();
+    });
+  });
 
   // ── diagnostics ────────────────────────────────────────────────────────────
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -45,6 +76,7 @@ export function createApp(deps: AppDeps): express.Express {
       dataDir: config.dataDir,
       redirectUri: c0?.redirectUri,
       connectors: connectorRuntimes.statusMap(),
+      otel: otelHealth(),
     });
   });
 
@@ -84,7 +116,7 @@ export function createApp(deps: AppDeps): express.Express {
     }
   });
 
-  // Escape hatch when port 80 can't be bound (Plan: no dead end either way).
+  // Escape hatch when the callback port can't be bound/reached (Plan: no dead end either way).
   app.post('/api/connectors/:id/paste-callback', async (req, res) => {
     const r = connectorRuntimes.byId(req.params.id);
     if (!r) {
@@ -131,6 +163,26 @@ export function createApp(deps: AppDeps): express.Express {
     const sid = sidFrom(req, res);
     const s = await deps.chat.startNew(sid);
     res.json(sessionDto(s));
+  });
+
+  // F1 — destroy every transcript + index and land on a fresh session.
+  app.post('/api/session/clear', async (req, res) => {
+    const sid = sidFrom(req, res);
+    const { deleted, session } = await deps.chat.clearHistory(sid);
+    res.json({ ok: true, deleted, ...sessionDto(session) });
+  });
+
+  // ── F2 trace viewer feed: traces grouped by traceId, newest first ───────────
+  app.get('/api/traces', async (req, res) => {
+    const sid = readSid(req); // default scope: the current browser session
+    const session = typeof req.query.session === 'string' && req.query.session ? req.query.session : sid ?? undefined;
+    const limit = Number.parseInt(String(req.query.limit ?? '50'), 10) || 50;
+    const otel = otelHealth();
+    if (!otel.enabled) {
+      res.json({ ok: true, otel, session: session ?? null, traces: [] });
+      return;
+    }
+    res.json({ ok: true, otel, session: session ?? null, traces: queryTraces({ session, limit }) });
   });
 
   // ── chat streaming (Plan §1): POST → x-ndjson wire events ─────────────────
@@ -225,6 +277,18 @@ function sessionDto(s: ChatSession): Record<string, unknown> {
       : null,
     status: connectorRuntimes.statusMap(),
   };
+}
+
+/** Canonical, id-free route label for span names (`/api/connectors/:id/connect`). */
+function apiRouteFor(path: string): string {
+  if (path === '/api/health' || path === '/api/traces' || path === '/api/chat') return path;
+  if (path === '/api/session' || path === '/api/session/new' || path === '/api/session/clear') return path;
+  if (path === '/api/connectors') return path;
+  if (path.startsWith('/api/connectors')) {
+    const m = /^\/api\/connectors\/[^/]+\/(connect|disconnect|paste-callback|tools)$/.exec(path);
+    return m ? `/api/connectors/:id/${m[1]}` : '/api/connectors/:id';
+  }
+  return path.replace(/\/[a-f0-9]{8,}/g, '/:id'); // fallback: mask hex-ish ids
 }
 
 async function redirectConnect(

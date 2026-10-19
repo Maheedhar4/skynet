@@ -30,15 +30,16 @@
         } @else {
           <button class="btn conn" (click)="openConnect(c)">Connect</button>
         }
-        <button class="btn minor" (click)="startPaste(c)" title="escape hatch when port 80 isn't bindable: paste the redirect URL">paste redirect…</button>
+        <button class="btn minor" (click)="startPaste(c)" title="escape hatch when the redirect can't reach skynet: paste the redirect URL">paste redirect…</button>
       </div>
 
       @if (pasteId() === c.id) {
         <div class="paste">
           <p>
-            Port 80 isn't bindable on this machine, so the Zepto redirect can't reach
-            skynet automatically. After finishing the login, the browser will show a
-            URL like <code>http://localhost/callback?code=…&amp;state=…</code> — paste it here:
+            If the redirect after login dead-ends (connection refused, or a page
+            that isn't skynet), copy the full URL from the browser's address
+            bar — it looks like <code>http://localhost/callback?code=…&amp;state=…</code>
+            (the port may differ) — and paste it here:
           </p>
           <textarea rows="3" [ngModel]="pasteUrl()" (ngModelChange)="pasteUrl.set($event)"
             placeholder="http://localhost/callback?code=…&state=…"></textarea>
@@ -52,7 +53,7 @@
   }
 
   <footer class="hint" [title]="'OAuth redirect URI registered with Zepto'">
-    redirect URI: <code>{{ cs.connectors()[0]?.redirectUri || 'http://localhost/callback' }}</code>
+    redirect URI: <code>{{ cs.connectors()[0]?.redirectUri }}</code>
     · dynamic client registration is done automatically at connect-time
   </footer>
 </section>

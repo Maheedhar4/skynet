@@ -45,7 +45,8 @@ export class ConnectorsService {
         return;
       }
       // The browser leaves skynet here; Zepto's OTP page takes over and
-      // redirects back to our /callback (on port 80) → regains the UI.
+      // redirects back to our /callback (the registered callback URI) →
+      // regains the UI.
       window.location.href = body.authorizeUrl;
     } catch (e) {
       this.toast.set(`Connect failed: ${e instanceof Error ? e.message : String(e)}`);

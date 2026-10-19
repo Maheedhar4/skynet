@@ -1,0 +1,230 @@
+/* F2 trace drawer — dark theme on the shared app CSS vars. */
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100dvh;
+  width: min(560px, 100vw);
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -18px 0 44px rgba(0, 0, 0, 0.42);
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spin {
+  color: var(--accent);
+  display: inline-block;
+  animation: turn 900ms linear infinite;
+}
+
+@keyframes turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.head-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.mini {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.mini:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.mini:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.otlp {
+  display: block;
+  color: var(--muted-dim);
+  font-size: 0.72rem;
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.trace {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.trace-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.tname {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tmuted {
+  color: var(--muted-dim);
+  font-weight: 400;
+  font-size: 0.72rem;
+  margin-left: 6px;
+}
+
+.tdur {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tdur.err {
+  color: var(--red);
+}
+
+.tattrs {
+  padding: 0 12px 8px;
+  color: var(--muted-dim);
+  font-size: 0.7rem;
+  font-family: var(--mono);
+  word-break: break-all;
+}
+
+.span-row {
+  padding: 6px 12px 8px 22px;
+  border-top: 1px solid rgba(58, 58, 54, 0.55);
+}
+
+.span-row.err .sname {
+  color: var(--red);
+}
+
+.span-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+}
+
+.sname {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sdur {
+  color: var(--muted-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.7rem;
+}
+
+.dot.s {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+
+.waterfall {
+  position: relative;
+  height: 5px;
+  margin: 5px 0 3px;
+  background: rgba(19, 19, 18, 0.85);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 999px;
+  opacity: 0.85;
+}
+
+.sattrs {
+  color: var(--muted-dim);
+  font-size: 0.66rem;
+  font-family: var(--mono);
+  word-break: break-all;
+  line-height: 1.45;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 34px 12px;
+}
+
+.foot {
+  color: var(--muted-dim);
+  font-size: 0.68rem;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+@media (max-width: 560px) {
+  .drawer {
+    width: 100vw;
+    padding: 14px;
+  }
+}

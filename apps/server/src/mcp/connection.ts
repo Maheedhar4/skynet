@@ -17,8 +17,22 @@ import { log, redact } from '../logger.js';
 import { ToolDecl, ToolSource } from '../types.js';
 import { ConnectorStore, TokenStore } from '../data/tokenstore.js';
 import { OAuthFlow, OAuthRefreshError } from '../oauth/flow.js';
+import type { Span } from '@opentelemetry/api';
+import { recordError, startSpan } from '../telemetry/tracer.js';
+import { ATTR } from '../telemetry/store.js';
 
 export const CLIENT_INFO = { name: 'skynet', version: '0.1.0' };
+
+/** Metadata-only argument preview for spans (also kept safe by value length). */
+function previewArgs(args: Record<string, unknown>): string {
+  let argstr = '';
+  try {
+    argstr = JSON.stringify(args ?? {});
+  } catch {
+    argstr = '';
+  }
+  return argstr && argstr !== '{}' ? (argstr.length > 160 ? `${argstr.slice(0, 159)}…` : argstr) : '';
+}
 
 export class McpToolSource implements ToolSource {
   private client: Client | null = null;
@@ -153,24 +167,53 @@ export class McpToolSource implements ToolSource {
     return this.connect();
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    if (!this.client) await this.connect();
+  async callTool(name: string, args: Record<string, unknown>, parentSpan?: Span): Promise<unknown> {
+    // F2 — ONE span per MCP tool call covers the direct engine's inline calls,
+    // the gate-executed calls (ChatService) and anything future. The 401
+    // retry stays inside the same span, marked retried. `parentSpan` (the
+    // llm.round that requested the tool) makes the waterfall nest exactly.
+    const span = startSpan(
+      'mcp.callTool',
+      {
+        [ATTR.connector]: this.def.id,
+        [ATTR.tool]: name,
+        'skynet.argsPreview': previewArgs(args),
+      },
+      parentSpan,
+    );
+    const t0 = Date.now();
     try {
-      const res = await this.execute(name, args);
-      return res;
-    } catch (e: unknown) {
-      if (e instanceof UnauthorizedError) {
-        // 401 → refresh silently + reconnect + retry exactly once
-        log.warn(this.connectorId, 'got 401 from MCP — refreshing token and retrying once');
+      if (!this.client) await this.connect();
+      try {
+        const res = await this.execute(name, args);
+        span.setAttribute(ATTR.ok, true);
+        span.setAttribute(ATTR.durationMs, Date.now() - t0);
+        return res;
+      } catch (e: unknown) {
+        if (e instanceof UnauthorizedError) {
+          // 401 → refresh silently + reconnect + retry exactly once
+          span.setAttribute('skynet.retried', true);
+          log.warn(this.connectorId, 'got 401 from MCP — refreshing token and retrying once');
+          await this.close().catch(() => undefined);
+          await this.freshAccessToken();
+          await this.connect();
+          const res = await this.execute(name, args);
+          span.setAttribute(ATTR.ok, true);
+          span.setAttribute(ATTR.durationMs, Date.now() - t0);
+          return res;
+        }
+        // Connection may have dropped; reconnect for the NEXT call, but do not
+        // blindly retry this one (placing orders must not double-fire).
         await this.close().catch(() => undefined);
-        await this.freshAccessToken();
-        await this.connect();
-        return this.execute(name, args);
+        throw e;
       }
-      // Connection may have dropped; reconnect for the NEXT call, but do not
-      // blindly retry this one (placing orders must not double-fire).
-      await this.close().catch(() => undefined);
+    } catch (e) {
+      recordError(span, e);
+      span.setAttribute(ATTR.ok, false);
+      span.setAttribute(ATTR.durationMs, Date.now() - t0);
       throw e;
+    } finally {
+      span.end();
     }
   }
 

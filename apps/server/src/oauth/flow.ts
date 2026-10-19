@@ -54,11 +54,21 @@ export class OAuthFlow {
 
     let registration: StoredRegistration;
     let wasRegistered = true;
-    if (existing?.registration?.clientId) {
+    // The AS validates redirect_uri exact-match against the client's
+    // registered URIs (no RFC 8252 port leniency). Re-register whenever the
+    // stored client predates a redirect-URI change — e.g. moving the callback
+    // to an unprivileged port.
+    if (
+      existing?.registration?.clientId &&
+      existing.registration.redirectUris.includes(this.def.redirectUri)
+    ) {
       registration = existing.registration;
     } else if (as.registration_endpoint) {
       registration = await this.registerClient(as);
       wasRegistered = false;
+    } else if (existing?.registration?.clientId) {
+      // No registration endpoint and a stale client — best effort with the old one.
+      registration = existing.registration;
     } else {
       throw new Error('Authorization server does not support dynamic client registration');
     }
@@ -71,6 +81,9 @@ export class OAuthFlow {
       state,
       verifier,
       redirectUri: this.def.redirectUri,
+      // The fresh registration must ride along: begin() is the only place it
+      // exists until complete() succeeds (nothing else persists it).
+      registration,
       createdAt: Date.now(),
     };
     await this.store.savePending(flow);
@@ -131,14 +144,18 @@ export class OAuthFlow {
   async complete(flow: PendingFlow, code: string): Promise<StoredTokens> {
     const { as } = await this.serverMeta();
     const existing = await this.store.load(this.def.id);
-    const reg: StoredRegistration =
-      existing?.registration ??
-      ({
-        clientId: '',
-        clientName: 'skynet (local chat)',
-        redirectUris: [flow.redirectUri],
-        tokenEndpointAuthMethod: 'none',
-      } as StoredRegistration);
+    // Prefer the client that started this flow (rides in the pending record),
+    // then any previously stored registration. A missing client_id here is a
+    // broken flow — fail with a clear message instead of a cryptic token error.
+    const reg: StoredRegistration | undefined =
+      flow.registration?.clientId
+        ? flow.registration
+        : existing?.registration?.clientId
+          ? existing.registration
+          : undefined;
+    if (!reg) {
+      throw new Error('No client registration for this login — press Connect again to restart the flow');
+    }
 
     const { status, json } = await postForm(as.token_endpoint, {
       grant_type: 'authorization_code',

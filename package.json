@@ -16,7 +16,17 @@
     "build:server": "npm run build -w apps/server",
     "build:web": "npm run build -w apps/web",
     "start:server": "npm run start -w apps/server",
-    "connect:probe": "npm run -w apps/server probe"
+    "connect:probe": "npm run -w apps/server probe",
+    "stack": "bash scripts/lifecycle.sh",
+    "stack:full-noauth": "bash scripts/lifecycle/start-full-noauth.sh",
+    "stack:full-auth": "bash scripts/lifecycle/start-full-auth.sh",
+    "stack:api-noauth": "bash scripts/lifecycle/start-api-noauth.sh",
+    "stack:api-auth": "bash scripts/lifecycle/start-api-auth.sh",
+    "stack:ui-noauth": "bash scripts/lifecycle/start-ui-noauth.sh",
+    "stack:ui-auth": "bash scripts/lifecycle/start-ui-auth.sh",
+    "stack:stop": "bash scripts/lifecycle/stop.sh",
+    "stack:status": "bash scripts/lifecycle/status.sh",
+    "stack:logs": "bash scripts/lifecycle/logs.sh"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

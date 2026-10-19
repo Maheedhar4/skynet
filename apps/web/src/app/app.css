@@ -61,6 +61,57 @@
   background: var(--panel-2);
 }
 
+/* F1 header actions: + New chat / Clear history… / ⏱ Traces */
+.chat-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pill-btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.pill-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--panel-2);
+}
+
+/* the F2 traces toggle — visually quieter, it is an inspection tool */
+.pill-btn.soft {
+  color: var(--muted);
+}
+
+.pill-btn.soft:hover:not(:disabled) {
+  color: var(--text);
+}
+
+/* clear history — irreversible, so it reads hazardous */
+.pill-btn.danger {
+  color: var(--amber);
+  border-style: dashed;
+}
+
+.pill-btn.danger:hover:not(:disabled) {
+  color: var(--red);
+  border-color: var(--red-border);
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.pill-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 main {
   flex: 1;
   min-height: 0;
@@ -85,12 +136,26 @@ main {
 }
 
 @media (max-width: 560px) {
+  /* three header buttons + connect + dots must still fit */
+  .header-right {
+    gap: 6px;
+  }
+
+  .chat-actions {
+    gap: 4px;
+  }
+
+  .pill-btn,
   .connect-btn {
-    padding: 7px 10px;
-    font-size: 0.74rem;
-    max-width: 40vw;
+    padding: 7px 9px;
+    font-size: 0.72rem;
+    max-width: 30vw;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .status-dot {
+    display: none;
   }
 }

@@ -4,6 +4,7 @@
  * events, chips and confirmation cards.
  */
 import { Content } from '@google/genai';
+import type { Span } from '@opentelemetry/api';
 import { ChatSession, ToolChip, ToolSource } from '../types.js';
 import { PreparedTool } from './tools.js';
 import { ConnectorDef } from '../connectors/registry.js';
@@ -38,6 +39,8 @@ export interface Engine {
     userText: string;
     tools: PreparedTool[];
     runtime?: RuntimeHandle;
+    /** F2: the agent.turn span — llm.round spans attach as its children. */
+    traceParent?: Span;
   }): AsyncGenerator<AgentStep>;
   /**
    * Answer a paused gate.
@@ -54,8 +57,16 @@ export interface Engine {
     executedResult?: unknown;
     tools: PreparedTool[];
     runtime?: RuntimeHandle;
+    /** F2: agent.gate span parent for nested llm.round spans. */
+    traceParent?: Span;
   }): AsyncGenerator<AgentStep>;
   reset(sid: string, history: Content[], tools: PreparedTool[]): void;
   save(sid: string, sess: ChatSession): void;
   forget(sid: string): void;
+  /**
+   * Drop in-memory chat state for EVERY sid (F1 clear-history). Transcript
+   * files may be deleted on disk; stale genai / ADK conversations for other
+   * sessions must not be able to resurrect deleted history.
+   */
+  forgetAll(): void;
 }

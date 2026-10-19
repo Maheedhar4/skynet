@@ -3,6 +3,36 @@
     <span class="mark">⌁</span> skynet
   </div>
   <div class="header-right">
+    <div class="chat-actions">
+      <button
+        class="pill-btn"
+        (click)="newChat()"
+        [disabled]="chat.streaming() || chat.clearing()"
+        title="Start a fresh conversation — the old transcript stays on disk"
+      >
+        + New chat
+      </button>
+      <button
+        class="pill-btn danger"
+        (click)="confirmClear()"
+        [disabled]="chat.streaming() || chat.clearing()"
+        title="Delete every stored transcript permanently (confirm first)"
+      >
+        @if (chat.clearing()) {
+          Clearing…
+        } @else {
+          Clear history…
+        }
+      </button>
+      <button
+        class="pill-btn soft"
+        (click)="toggleTraces()"
+        [disabled]="chat.streaming()"
+        title="Inspect what this session did — agent rounds, tools, gate decisions"
+      >
+        ⏱ Traces
+      </button>
+    </div>
     @for (c of cs.connectors(); track c.id) {
       <span
         class="status-dot"
@@ -22,6 +52,10 @@
 
 @if (cs.sheetOpen()) {
   <sk-connector-sheet />
+}
+
+@if (traces.open()) {
+  <sk-trace-drawer />
 }
 
 @if (cs.toast(); as toast) {

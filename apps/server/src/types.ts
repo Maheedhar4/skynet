@@ -97,5 +97,9 @@ export interface ToolDecl {
 /** Where tools + tool execution come from (real MCP or a fake for smoke tests). */
 export interface ToolSource {
   tools(): Promise<ToolDecl[]>;
-  callTool(name: string, args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * `parentSpan` (optional, F2): the span the `mcp.callTool` span hangs off
+   * (the llm.round that requested the tool).
+   */
+  callTool(name: string, args: Record<string, unknown>, parentSpan?: unknown): Promise<unknown>;
 }

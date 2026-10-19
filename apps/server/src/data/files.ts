@@ -35,6 +35,40 @@ export async function removeFile(file: string): Promise<void> {
   await fs.promises.rm(file, { force: true });
 }
 
+/**
+ * Safe directory listing: only regular files matching `suffix` (no dotfiles,
+ * no directories). Names are used exclusively through joinSecure afterwards,
+ * so traversal is impossible even if the dir somehow contains odd entries.
+ */
+export async function listFiles(dir: string, suffix = '.json'): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await fs.promises.readdir(dir);
+  } catch {
+    return []; // dir missing/not created yet → nothing to clear
+  }
+  const out: string[] = [];
+  for (const name of entries.sort()) {
+    if (name.startsWith('.') || !name.endsWith(suffix)) continue;
+    const full = joinSecure(dir, name);
+    try {
+      if ((await fs.promises.lstat(full)).isFile()) out.push(full);
+    } catch {
+      // vanished between readdir and stat — fine, it is gone anyway
+    }
+  }
+  return out;
+}
+
+/** Unlink loop for the safe listing above; returns how many files were deleted. */
+export async function removeAll(dir: string, suffix = '.json'): Promise<number> {
+  const files = await listFiles(dir, suffix);
+  for (const file of files) {
+    await fs.promises.rm(file, { force: true });
+  }
+  return files.length;
+}
+
 export function joinSecure(dir: string, name: string): string {
   // Names come from the server itself, but sanitize anyway.
   const safe = name.replace(/[^a-zA-Z0-9_.-]/g, '_');

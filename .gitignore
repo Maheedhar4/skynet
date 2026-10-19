@@ -11,3 +11,6 @@ coverage/
 
 # local token/session storage lives outside the repo (~/.skynet) but be safe anyway
 *.tokens.json
+
+# startup lifecycle runtime state (pids + logs under .run/lifecycle)
+.run/

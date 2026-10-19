@@ -2,10 +2,12 @@
  * Live connectivity probe (plan §Key technical decision):
  *   1. MCP OAuth discovery (protected resource + authorization server)
  *   2. dynamic client registration (RFC 7591)
- *   3. THE PORT QUESTION — authorize redirect_uri:
- *        whitelisted (no port)  ⇒ expected 200 (OTP page renders)
- *        localhost:8080         ⇒ expected REJECT (UriNotRegistered) ⇒ we MUST
- *        serve /callback on port 80 — this encoded our architecture.
+ *   3. THE PORT QUESTION — authorize redirect_uri: Zepto validates the URI
+ *      exact-match against the client's registered set (authorize with an
+ *      unregistered URI bounces: uri_not_registered_for_client) — but
+ *      /register ACCEPTS ported URIs, so the callback lives on an
+ *      unprivileged port (default 4180) as long as skynet serves and
+ *      registers the exact same URI.
  *   4. Zepto MCP TcpHealth: expect a 401 when calling the MCP endpoint with a
  *      bogus bearer (proves the endpoint is a streamable HTTP server).
  *

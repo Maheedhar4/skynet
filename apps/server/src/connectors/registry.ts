@@ -17,9 +17,11 @@ export interface ConnectorDef {
   resource: string;
   /** OAuth scopes to request. */
   scopes: string[];
-  /** The redirect URI we will register with the AS. Zepto whitelists only
-   * `http://localhost` and `http://localhost/callback` — exact match, NO PORT
-   * (verified live 2026-10). Default binds the callback server on port 80. */
+  /** The redirect URI we will register with the AS. Must character-match a
+   * URI registered at connect time — Zepto validates redirect_uri exactly at
+   * authorize (no RFC 8252 port leniency; verified live 2026-10), but it
+   * registers ported URIs happily, so the default lives on the unprivileged
+   * callback port (see config.zeptoRedirectUri). */
   redirectUri: string;
   /** Tool names that match this need the order-confirmation gate. Empty regex → none. */
   gateRe?: RegExp;
@@ -49,7 +51,7 @@ export const CONNECTORS: ConnectorDef[] = [
     brandColor: '#d97757',
     mcpUrl: `${ZEPTO_BASE}/mcp`,
     resource: ZEPTO_BASE,
-    redirectUri: process.env.SKYNET_ZEPTO_REDIRECT_URI?.trim() || 'http://localhost/callback',
+    redirectUri: config.zeptoRedirectUri,
     scopes: [
       'tools:read',
       'tools:write',

@@ -13,7 +13,7 @@
  */
 import { ChatSession, ChatTurn, ConfirmationCard, WireEvent, ConnectorStatus } from '../types.js';
 import { SessionStore } from '../data/sessionstore.js';
-import { ensureDir, joinSecure, readJson, writeJsonSecure } from '../data/files.js';
+import { ensureDir, joinSecure, readJson, removeAll, writeJsonSecure } from '../data/files.js';
 import { config } from '../config.js';
 import { createId } from '../oauth/pkce.js';
 import { log } from '../logger.js';
@@ -24,6 +24,8 @@ import { DirectEngine } from './direct-engine.js';
 import { summarizeToolResult } from './summary.js';
 import { ZeroKeyError } from './genai.js';
 import { createAdkEngine } from './adk-engine.js';
+import { recordError, startSpan, optionalContent } from '../telemetry/tracer.js';
+import { ATTR } from '../telemetry/store.js';
 const YES_RE =
   /^\s*(?:y(?:ea?h?)?|yes(?:\s*please)?|confirm(?:ed)?|ok(?:ay)?|do it|go ahead|proceed|approve(?:d)?|sure|continue|place (?:it|the order))\b/i;
 const DECLINED: unknown = { status: 'declined', reason: 'user did not confirm — tool was not executed' };
@@ -145,6 +147,40 @@ export class ChatService {
     return { ...fresh, pendingGate: null };
   }
 
+  /**
+   * F1 — Clear history: wipe EVERY transcript JSON under history/ (the
+   * index goes down with them; it is rewritten right after), make any sid
+   * on any engine drop its in-memory chat (stale genai/ADK state must not
+   * resurrect deleted history), then hand the caller a fresh empty session
+   * via the same path the "+ New chat" button uses. Token/auth storage is a
+   * separate directory and is deliberately untouched.
+   */
+  async clearHistory(sid: string): Promise<{ deleted: number; session: ChatSession }> {
+    await this.ensureIndex();
+    const deleted = await removeAll(this.historyDir, '.json');
+    this.index = {}; // fresh index — stale entries must not survive their files
+    this.sessions.clear();
+    for (const e of this.allEngines()) {
+      try {
+        e.forgetAll();
+      } catch {
+        // engine hygiene must never break the UI action
+      }
+    }
+    const session = await this.startNew(sid);
+    log.event('chat', `history cleared (${deleted} transcript file(s) deleted)`);
+    return { deleted, session };
+  }
+
+  private allEngines(): Engine[] {
+    const e = this.enginesRef;
+    if (!e) return [];
+    const out: Engine[] = [];
+    if (e.direct) out.push(e.direct);
+    if (e.adk && e.adk !== e.direct) out.push(e.adk);
+    return out;
+  }
+
   private engineFor(sid: string): Engine | null {
     void sid;
     const e = this.enginesRef;
@@ -178,6 +214,29 @@ export class ChatService {
     mode: 'turn' | 'gate',
     text: string,
   ): AsyncGenerator<WireEvent> {
+    const turnSpan = startSpan('agent.turn', {
+      [ATTR.session]: sid,
+      [ATTR.engine]: config.engine,
+      [ATTR.mode]: mode,
+      [ATTR.model]: config.geminiModel,
+    });
+    try {
+      yield* this.turnBody(sid, session, mode, text, turnSpan);
+    } finally {
+      turnSpan.end();
+    }
+  }
+
+  private async *turnBody(
+    sid: string,
+    session: ChatSession,
+    mode: 'turn' | 'gate',
+    text: string,
+    turnSpan: ReturnType<typeof startSpan>,
+  ): AsyncGenerator<WireEvent> {
+    // SKYNET_OTEL_CONTENT=1 only — user text is private by default
+    const userText = optionalContent(text, 300);
+    if (userText !== undefined) turnSpan.setAttribute('skynet.turn.text', userText);
     const assistant: ChatTurn = {
       id: createId(),
       role: 'assistant',
@@ -192,11 +251,17 @@ export class ChatService {
     let tools: PreparedTool[] = [];
     let connectorDown = false;
     if (runtime) {
+      const prepSpan = startSpan('agent.prepare_tools', { [ATTR.connector]: runtime.def.id }, turnSpan);
       try {
         tools = await prepareTools(runtime.mcp, runtime.def);
         connectorDown = tools.length === 0 && runtime.snapshot().state !== 'connected';
-      } catch {
+        prepSpan.setAttribute(ATTR.toolCount, tools.length);
+        prepSpan.setAttribute(ATTR.connectorDown, connectorDown);
+      } catch (e) {
         connectorDown = true;
+        recordError(prepSpan, e);
+      } finally {
+        prepSpan.end();
       }
     }
     if (connectorDown) {
@@ -216,14 +281,15 @@ export class ChatService {
       const engines = await this.acquireEngines();
       if (!engines.direct) throw new ZeroKeyError();
       usedEngine = this.engineId === 'adk' ? engines.adk ?? engines.direct : engines.direct;
+      turnSpan.setAttribute(ATTR.engine, engines.adk === usedEngine ? 'adk' : 'direct');
       if (this.engineId === 'adk' && !engines.adk) {
         yield { type: 'note', turnId: assistant.id, text: 'ADK engine unavailable — using the direct engine. (SKYNET_ENGINE=direct silences this note.)' };
       }
 
       const stepSource: AsyncGenerator<AgentStep> =
         mode === 'gate'
-          ? this.gateFlow(sid, session, text, usedEngine, engines.adk === usedEngine, tools, runtime)
-          : usedEngine.runTurn({ sid, session, userText: text, tools, runtime });
+          ? this.gateFlow(sid, session, text, usedEngine, engines.adk === usedEngine, tools, runtime, turnSpan)
+          : usedEngine.runTurn({ sid, session, userText: text, tools, runtime, traceParent: turnSpan });
 
       const absorb = makeAbsorber(session, assistant, vendorName);
       for await (const step of stepSource) {
@@ -277,58 +343,77 @@ export class ChatService {
     adkActive: boolean,
     tools: PreparedTool[],
     runtime: RuntimeHandle | undefined,
+    turnSpan: ReturnType<typeof startSpan>,
   ): AsyncGenerator<AgentStep> {
     const gate = session.pendingGate;
     if (!gate) return;
     const approved = YES_RE.test(text.trim().slice(0, 48));
+    const gateSpan = startSpan(
+      'agent.gate',
+      {
+        [ATTR.session]: sid,
+        [ATTR.mode]: 'gate',
+        [ATTR.gateTool]: gate.tool,
+        [ATTR.gateApproved]: approved,
+      },
+      turnSpan,
+    );
+    const gateReply = optionalContent(text, 64); // SKYNET_OTEL_CONTENT=1 only
+    if (gateReply !== undefined) gateSpan.setAttribute('skynet.gate.answer', gateReply);
     const gateRef = { id: gate.id, tool: gate.tool };
     session.pendingGate = null; // clear FIRST — crash after this leaves no trap
 
-    yield {
-      kind: 'note',
-      text: approved ? 'Confirmed — running the tool now.' : 'Not confirmed — the tool was not executed, nothing was charged.',
-    };
+    try {
+      yield {
+        kind: 'note',
+        text: approved ? 'Confirmed — running the tool now.' : 'Not confirmed — the tool was not executed, nothing was charged.',
+      };
 
-    let executedResult: unknown = undefined; // ADK runs the tool itself
-    if (!adkActive) {
-      executedResult = DECLINED;
-      if (approved) {
-        yield {
-          kind: 'chip',
-          chip: { id: gate.id, name: gate.tool, title: gateTitle(gate.tool, gate.args), status: 'running' },
-        };
-        let failed = false;
-        try {
-          const src = runtime?.mcp;
-          if (!src) throw new Error('no quick-commerce MCP connected');
-          executedResult = await src.callTool(gate.tool, gate.args);
-        } catch (e) {
-          failed = true;
-          executedResult = { error: e instanceof Error ? e.message : String(e) };
+      let executedResult: unknown = undefined; // ADK runs the tool itself
+      if (!adkActive) {
+        executedResult = DECLINED;
+        if (approved) {
+          yield {
+            kind: 'chip',
+            chip: { id: gate.id, name: gate.tool, title: gateTitle(gate.tool, gate.args), status: 'running' },
+          };
+          let failed = false;
+          try {
+            const src = runtime?.mcp;
+            if (!src) throw new Error('no quick-commerce MCP connected');
+            executedResult = await src.callTool(gate.tool, gate.args, gateSpan);
+          } catch (e) {
+            failed = true;
+            executedResult = { error: e instanceof Error ? e.message : String(e) };
+          }
+          const ok = !failed && !(executedResult as Record<string, unknown>)?.error;
+          gateSpan.setAttribute(ATTR.ok, ok);
+          yield {
+            kind: 'chip',
+            chip: {
+              id: gate.id,
+              name: gate.tool,
+              title: gateTitle(gate.tool, gate.args),
+              status: ok ? 'done' : 'error',
+              detail: summarizeToolResult(executedResult),
+            },
+          };
         }
-        const ok = !failed && !(executedResult as Record<string, unknown>)?.error;
-        yield {
-          kind: 'chip',
-          chip: {
-            id: gate.id,
-            name: gate.tool,
-            title: gateTitle(gate.tool, gate.args),
-            status: ok ? 'done' : 'error',
-            detail: summarizeToolResult(executedResult),
-          },
-        };
       }
-    }
 
-    yield* engine.answerPending({
-      sid,
-      session,
-      approved,
-      gate: gateRef,
-      executedResult,
-      tools,
-      runtime,
-    });
+      yield* engine.answerPending({
+        sid,
+        session,
+        approved,
+        gate: gateRef,
+        executedResult,
+        tools,
+        runtime,
+        traceParent: gateSpan,
+      });
+    } finally {
+      gateSpan.end();
+    }
   }
 }
 
