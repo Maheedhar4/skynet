@@ -86,10 +86,14 @@ async function main(): Promise<void> {
     log.info(SCOPE, `OAuth callback server on :${config.callbackPort} → ${CONNECTORS[0]?.redirectUri}`);
   });
   callbackServer.on('error', (e: NodeJS.ErrnoException) => {
-    const reason =
-      e.code === 'EACCES'
-        ? `cannot bind port ${config.callbackPort} (EACCES) — port 80 needs privileges for Zepto's exact-match redirect URI; see README "Port 80 note"`
-        : `${e.code}: ${e.message}`;
+    let reason: string;
+    if (e.code === 'EACCES') {
+      reason = `cannot bind port ${config.callbackPort} (EACCES) — port 80 needs privileges for Zepto's exact-match redirect URI; see README "Port 80 note"`;
+    } else if (e.code === 'EADDRINUSE') {
+      reason = `cannot bind port ${config.callbackPort} (EADDRINUSE) — something else (e.g. apache2/nginx) already owns :80; stop it or use the paste fallback (connector sheet)`;
+    } else {
+      reason = `${e.code}: ${e.message}`;
+    }
     log.warn(SCOPE, `callback server on :${config.callbackPort} FAILED — ${reason}`);
     callbackStatus.ok = false;
     callbackStatus.error = reason;

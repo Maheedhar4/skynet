@@ -5,8 +5,25 @@ import { fileURLToPath } from 'node:url';
 import * as dotenv from 'dotenv';
 
 // dotenv: load the repo-root .env (the server may run from a workspace dir).
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const repoRoot = repoRootDir();
 dotenv.config({ path: path.join(repoRoot, '.env') });
+
+/**
+ * Walk up from this module's directory until we hit the monorepo root
+ * (recognised by the `apps/web` workspace marker). Works for both runs:
+ *   - tsx straight from source  (…/apps/server/src → up 3)
+ *   - compiled tsc output       (…/apps/server/dist → up 2)
+ */
+function repoRootDir(): string {
+  let d = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(d, 'apps', 'web', 'package.json'))) return d;
+    const up = path.dirname(d);
+    if (up === d) break; // filesystem root — stop
+    d = up;
+  }
+  return process.cwd();
+}
 
 function int(v: string | undefined, dflt: number): number {
   const n = v ? Number.parseInt(v, 10) : Number.NaN;

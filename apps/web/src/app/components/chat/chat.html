@@ -1,0 +1,95 @@
+<div #scroller class="messages">
+  @for (turn of chat.turns(); track turn.id) {
+    @switch (turn.role) {
+      @case ('user') {
+        <div class="row user-row">
+          <div class="bubble user-bubble">{{ turn.text }}</div>
+        </div>
+      }
+      @case ('system') {
+        <div class="system-note">{{ turn.text }}</div>
+      }
+      @default {
+        <div class="msg assistant">
+          @if (turn.chips?.length) {
+            <div class="chips">
+              @for (chip of turn.chips!; track chip.id) {
+                <span class="{{ chipClass(chip) }}" [title]="chip.detail && chip.detail.length ? chip.detail : chip.name">
+                  <span class="chip-icon">{{ chipIcon(chip) }}</span>
+                  <span class="chip-title">{{ chip.title }}</span>
+                </span>
+              }
+            </div>
+          }
+
+          @if (turn.confirmation; as card) {
+            <div class="confirm-card" [class.awaiting]="chat.pendingGateId() === card.id">
+              <div class="confirm-head">⚠️ {{ card.summary }}</div>
+              <div class="confirm-meta">
+                <code>{{ card.tool }}</code>
+                <span class="args">{{ card.argsPreview }}</span>
+              </div>
+              <div class="confirm-note">Real money — Zepto processes this as a real order.</div>
+              @if (chat.pendingGateId() === card.id) {
+                <div class="confirm-actions">
+                  <button class="btn-yes" (click)="chat.answerGate(true)" [disabled]="chat.streaming()">
+                    YES — confirm &amp; run
+                  </button>
+                  <button class="btn-no" (click)="chat.answerGate(false)" [disabled]="chat.streaming()">
+                    no — cancel
+                  </button>
+                </div>
+                <div class="confirm-hint">…or reply YES / no in the chat below.</div>
+              } @else {
+                <div class="confirm-hint">answered</div>
+              }
+            </div>
+          }
+
+          @if (turn.text) {
+            <div class="text" [innerHTML]="fmt(turn.text)"></div>
+          } @else if (chat.streaming() && $last) {
+            <div class="text thinking"><span class="cursor">▍</span></div>
+          }
+        </div>
+      }
+    }
+  } @empty {
+    <div class="empty">
+      <div class="hello">What can skynet fetch you?</div>
+      <p>
+        Try <em>“find amul milk and add to cart”</em> — but first connect the Zepto
+        quick-commerce MCP with the header button. Orders placed through it are
+        real orders with real money.
+      </p>
+    </div>
+  }
+</div>
+
+<footer class="composer-wrap">
+  @if (chat.sessionError(); as err) {
+    <div class="session-error">{{ err }}</div>
+  }
+  <div class="composer">
+    <textarea
+      rows="1"
+      [ngModel]="draft()"
+      (ngModelChange)="draft.set($event)"
+      (keydown)="keydown($event)"
+      placeholder="{{ chat.streaming() ? '…' : 'Message skynet — try “find amul milk”' }}"
+      [disabled]="chat.streaming()"
+      #ta
+      (input)="autosize(ta)"
+    ></textarea>
+    <button class="send" (click)="send()" [disabled]="chat.streaming() || !draft().trim()" aria-label="send">
+      @if (chat.streaming()) {
+        <span class="stopdot">●</span>
+      } @else {
+        ➤
+      }
+    </button>
+  </div>
+  <div class="foot-note">
+    skynet runs locally · Zepto MCP orders are real · search/cart/history run directly — orders need your YES
+  </div>
+</footer>

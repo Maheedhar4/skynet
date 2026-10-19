@@ -1,0 +1,58 @@
+<div class="overlay" (click)="close()"></div>
+<section class="sheet" role="dialog" aria-label="quick commerce connectors">
+  <header>
+    <h2>Connect to Quick Commerce MCPs</h2>
+    <button class="x" (click)="close()" aria-label="close">✕</button>
+  </header>
+  <p class="sub">
+    skynet talks to providers' <strong>remote hosted MCP servers</strong> over OAuth (PKCE). Logging in uses
+    your Indian mobile number + OTP. Adding Blinkit / Instamart later is registry work.
+  </p>
+
+  @for (c of cs.connectors(); track c.id) {
+    <article class="card" [style.--brand:c.brandColor]>
+      <div class="card-head">
+        <span class="brand">{{ c.emoji }} {{ c.name }}</span>
+        <span class="dot" [style.background]="dotFor(c)"></span>
+      </div>
+      <div class="tagline">{{ c.tagline }}</div>
+      <div class="status">
+        <span class="status-label">{{ statusLine(c) }}</span>
+        <span class="last">({{ lastChecked(c) }})</span>
+      </div>
+      @if (c.status.error) {
+        <div class="error">Reason: {{ c.status.error }}</div>
+      }
+      <div class="callout">⚠️ {{ c.callout }}</div>
+      <div class="actions">
+        @if (c.status.state === 'connected') {
+          <button class="btn dis" (click)="disconnect(c)" title="revoke + clear tokens">Disconnect</button>
+        } @else {
+          <button class="btn conn" (click)="openConnect(c)">Connect</button>
+        }
+        <button class="btn minor" (click)="startPaste(c)" title="escape hatch when port 80 isn't bindable: paste the redirect URL">paste redirect…</button>
+      </div>
+
+      @if (pasteId() === c.id) {
+        <div class="paste">
+          <p>
+            Port 80 isn't bindable on this machine, so the Zepto redirect can't reach
+            skynet automatically. After finishing the login, the browser will show a
+            URL like <code>http://localhost/callback?code=…&amp;state=…</code> — paste it here:
+          </p>
+          <textarea rows="3" [ngModel]="pasteUrl()" (ngModelChange)="pasteUrl.set($event)"
+            placeholder="http://localhost/callback?code=…&state=…"></textarea>
+          <div class="paste-actions">
+            <button class="btn conn" (click)="submitPaste(c)">Complete login</button>
+            <button class="btn minor" (click)="cancelPaste()">cancel</button>
+          </div>
+        </div>
+      }
+    </article>
+  }
+
+  <footer class="hint" [title]="'OAuth redirect URI registered with Zepto'">
+    redirect URI: <code>{{ cs.connectors()[0]?.redirectUri || 'http://localhost/callback' }}</code>
+    · dynamic client registration is done automatically at connect-time
+  </footer>
+</section>

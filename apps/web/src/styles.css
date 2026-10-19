@@ -1,1 +1,59 @@
-/* You can add global styles to this file, and also import other style files */
+/* skynet global theme — Claude-ish warm dark, palette from the plan */
+:root {
+  --bg: #1a1a18;
+  --panel: #242422;
+  --panel-2: #2b2b28;
+  --text: #ece9e2;
+  --muted: #a6a399;
+  --muted-dim: #7d7a71;
+  --muted-bg: #4a4a45;
+  --accent: #d97757;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --amber-border: #8a6d1f;
+  --border: #3a3a36;
+  --red: #f87171;
+  --red-border: #7f2c2c;
+  --code-bg: #131312;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted-bg);
+  border-radius: 8px;
+  border: 2px solid var(--bg);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: rgba(217, 119, 87, 0.35);
+}
